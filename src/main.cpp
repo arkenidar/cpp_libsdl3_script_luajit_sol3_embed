@@ -131,6 +131,28 @@ public:
                         std::cerr << "Lua onKeyDown error: " << e.what() << std::endl;
                     }
                 }
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                // Call Lua onMouseDown if it exists
+                sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
+                if (onMouseDown) {
+                    try {
+                        (*onMouseDown)(event.button.x, event.button.y, event.button.button);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_FINGER_DOWN) {
+                // Call Lua onMouseDown for touch events (normalized to window coordinates)
+                sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
+                if (onMouseDown) {
+                    try {
+                        float x = event.tfinger.x * windowWidth;
+                        float y = event.tfinger.y * windowHeight;
+                        (*onMouseDown)(x, y, 1); // Treat as left click
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
+                    }
+                }
             }
         }
     }

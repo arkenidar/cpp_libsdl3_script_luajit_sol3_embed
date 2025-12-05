@@ -1,2 +1,3 @@
 i need a sharable coding base for using together : CMake , C++ , libSDL3 , Sol3 ( https://github.com/ThePhD/sol2 ) , LuaJIT ( embedded script )
 
+in the current example main.lua add a simple way to demonstrate action i.e. "mouse click or touchscreen touch" on a simple rectangular screen area
