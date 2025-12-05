@@ -1,0 +1,2 @@
+i need a sharable coding base for using together : CMake , C++ , libSDL3 , Sol3 ( https://github.com/ThePhD/sol2 ) , LuaJIT ( embedded script )
+

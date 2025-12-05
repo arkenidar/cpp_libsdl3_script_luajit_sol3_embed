@@ -1,0 +1,52 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Configure CMake",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "mkdir -p ${workspaceFolder}/build && cmake -S ${workspaceFolder} -B ${workspaceFolder}/build -DCMAKE_BUILD_TYPE=Debug"
+            ],
+            "problemMatcher": [],
+            "detail": "Configure CMake with Debug build type"
+        },
+        {
+            "label": "Build Project",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"],
+            "dependsOn": ["Configure CMake"],
+            "dependsOrder": "sequence",
+            "detail": "Build the project using CMake (auto-configures if needed)"
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "rm -rf ${workspaceFolder}/build && mkdir -p ${workspaceFolder}/build"
+            ],
+            "problemMatcher": [],
+            "detail": "Remove and recreate build directory"
+        },
+        {
+            "label": "Rebuild Project",
+            "type": "shell",
+            "dependsOn": ["Clean Build", "Configure CMake", "Build Project"],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "detail": "Clean, configure, and build from scratch"
+        }
+    ]
+}
