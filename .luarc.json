@@ -1,0 +1,15 @@
+{
+  "diagnostics": {
+    "globals": [
+      "setWindowTitle",
+      "getWindowSize",
+      "drawRect",
+      "quit",
+      "setBackgroundColor",
+      "print"
+    ]
+  },
+  "runtime": {
+    "version": "LuaJIT"
+  }
+}

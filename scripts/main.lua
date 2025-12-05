@@ -1,5 +1,8 @@
 -- Main Lua script for SDL3 + LuaJIT + Sol3 demo
 
+-- C++ API functions (injected by Sol3 at runtime)
+---@diagnostic disable: undefined-global
+
 print("Lua script loaded successfully!")
 print("Press ESC to quit, SPACE to change colors")
 
@@ -16,12 +19,14 @@ local colors = {
 -- Set initial window title
 setWindowTitle("SDL3 + LuaJIT + Sol3 Demo")
 
--- Update function called every frame
+-- Update function called every frame (global for C++ callback)
+---@diagnostic disable-next-line: lowercase-global
 function update(deltaTime)
     time = time + deltaTime
 end
 
--- Render function called every frame
+-- Render function called every frame (global for C++ callback)
+---@diagnostic disable-next-line: lowercase-global
 function render()
     local winSize = getWindowSize()
     local centerX = winSize.width / 2
@@ -46,7 +51,8 @@ function render()
     drawRect(centerX - size/2, centerY - size/2, size, size, 1.0, 0.8, 0.2, 0.9)
 end
 
--- Key down event handler
+-- Key down event handler (global for C++ callback)
+---@diagnostic disable-next-line: lowercase-global
 function onKeyDown(key)
     if key == "Escape" then
         print("Quitting application...")
