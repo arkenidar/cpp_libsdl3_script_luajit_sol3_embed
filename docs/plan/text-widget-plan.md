@@ -8,7 +8,7 @@ Add text rendering and a full-featured text widget to the SDL3/LuaJIT/Sol3 proje
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 1 | Foundation (Basic Text Rendering) | ✅ Complete |
-| Phase 2 | Text Widget Primitives | ⏳ Pending |
+| Phase 2 | Text Widget Primitives | ✅ Complete |
 | Phase 3 | Text Widget | ⏳ Pending |
 
 ## Files to Modify
@@ -72,7 +72,9 @@ TTF_Font* getOrCreateFontAtSize(int fontId, float size);  // helper
 
 ---
 
-## Phase 2: Text Widget Primitives
+## Phase 2: Text Widget Primitives ✅
+
+> **Status:** Complete. All event callbacks, text input control, clipboard, drawing helpers, and text measurement functions are implemented.
 
 ### New Event Callbacks
 - `onTextInput(text)` - SDL_EVENT_TEXT_INPUT
@@ -185,12 +187,13 @@ Modify handleEvents() to route keyboard/mouse/text events to focused TextWidget 
 | 1.4 | Add measureText, getFontHeight | ✅ |
 | 1.5 | Add drawText | ✅ |
 | 1.6 | Test Phase 1 in Lua | ✅ |
-| 2.1 | Add onTextInput, onKeyUp, onMouseUp events |
-| 2.2 | Add startTextInput/stopTextInput |
-| 2.3 | Add clipboard functions |
-| 2.4 | Add getKeyModifiers |
-| 2.5 | Add drawLine, drawRectOutline |
-| 2.6 | Add measureTextToOffset, getOffsetFromX |
+| 2.1 | Add onTextInput, onKeyUp, onMouseUp events | ✅ |
+| 2.2 | Add startTextInput/stopTextInput | ✅ |
+| 2.3 | Add clipboard functions | ✅ |
+| 2.4 | Add getKeyModifiers | ✅ |
+| 2.5 | Add drawLine, drawRectOutline | ✅ |
+| 2.6 | Add measureTextToOffset, getOffsetFromX | ✅ |
+| 2.7 | Test Phase 2 in Lua (test_phase2.lua) | ✅ |
 | 3.1 | Implement TextWidget class |
 | 3.2 | Add TextWidget Lua bindings |
 | 3.3 | Add event routing to widgets |
