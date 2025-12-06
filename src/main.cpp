@@ -210,6 +210,85 @@ public:
                 currentFont = nullptr;
             }
         };
+
+        // Text measurement functions
+        lua["measureText"] = [this](const std::string& text) -> sol::table {
+            sol::table result = lua.create_table();
+            result["width"] = 0;
+            result["height"] = 0;
+
+            if (!currentFont) return result;
+
+            int w = 0, h = 0;
+            if (TTF_GetStringSize(currentFont, text.c_str(), text.length(), &w, &h)) {
+                result["width"] = w;
+                result["height"] = h;
+            }
+            return result;
+        };
+
+        lua["getFontHeight"] = [this]() -> int {
+            if (!currentFont) return 0;
+            return TTF_GetFontHeight(currentFont);
+        };
+
+        // Text rendering function
+        lua["drawText"] = sol::overload(
+            // drawText(text, x, y, r, g, b, a)
+            [this](const std::string& text, float x, float y, float r, float g, float b, float a) {
+                if (!currentFont || !textEngine || !renderer) return;
+
+                TTF_Text* ttfText = TTF_CreateText(textEngine, currentFont, text.c_str(), text.length());
+                if (!ttfText) return;
+
+                SDL_Color color = {
+                    static_cast<Uint8>(r * 255),
+                    static_cast<Uint8>(g * 255),
+                    static_cast<Uint8>(b * 255),
+                    static_cast<Uint8>(a * 255)
+                };
+                TTF_SetTextColor(ttfText, color.r, color.g, color.b, color.a);
+                TTF_DrawRendererText(ttfText, x, y);
+                TTF_DestroyText(ttfText);
+            },
+            // drawText(text, x, y, r, g, b) - default alpha 1.0
+            [this](const std::string& text, float x, float y, float r, float g, float b) {
+                if (!currentFont || !textEngine || !renderer) return;
+
+                TTF_Text* ttfText = TTF_CreateText(textEngine, currentFont, text.c_str(), text.length());
+                if (!ttfText) return;
+
+                SDL_Color color = {
+                    static_cast<Uint8>(r * 255),
+                    static_cast<Uint8>(g * 255),
+                    static_cast<Uint8>(b * 255),
+                    255
+                };
+                TTF_SetTextColor(ttfText, color.r, color.g, color.b, color.a);
+                TTF_DrawRendererText(ttfText, x, y);
+                TTF_DestroyText(ttfText);
+            },
+            // drawText(text, x, y, size, r, g, b, a) - with per-call size
+            [this](const std::string& text, float x, float y, float size, float r, float g, float b, float a) {
+                if (currentFontId == 0 || !textEngine || !renderer) return;
+
+                TTF_Font* font = getOrCreateFontAtSize(currentFontId, size);
+                if (!font) return;
+
+                TTF_Text* ttfText = TTF_CreateText(textEngine, font, text.c_str(), text.length());
+                if (!ttfText) return;
+
+                SDL_Color color = {
+                    static_cast<Uint8>(r * 255),
+                    static_cast<Uint8>(g * 255),
+                    static_cast<Uint8>(b * 255),
+                    static_cast<Uint8>(a * 255)
+                };
+                TTF_SetTextColor(ttfText, color.r, color.g, color.b, color.a);
+                TTF_DrawRendererText(ttfText, x, y);
+                TTF_DestroyText(ttfText);
+            }
+        );
     }
 
     bool loadScript(const std::string& scriptPath) {

@@ -7,6 +7,14 @@ print("Lua script loaded successfully!")
 print("Press ESC to quit, SPACE to change colors")
 print("Click/touch the button to trigger an action")
 
+-- Load font for text rendering
+local font = loadFont("assets/DejaVuSans.ttf", 24)
+if font then
+    print("Font loaded successfully with id: " .. tostring(font))
+else
+    print("Warning: Could not load font")
+end
+
 -- Initialize state
 local time = 0
 local colorIndex = 0
@@ -71,6 +79,24 @@ function render()
         btnR, btnG, btnB = 0.4, 0.9, 0.5
     end
     drawRect(button.x, button.y, button.width, button.height, btnR, btnG, btnB, 1.0)
+
+    -- Draw text on button
+    if font then
+        drawText("Click Me!", button.x + 20, button.y + 12, 1.0, 1.0, 1.0)
+    end
+
+    -- Draw title and info text
+    if font then
+        setFontSize(32)
+        drawText("SDL3 + Lua Demo", 10, winSize.height - 80, 1.0, 0.9, 0.3)
+        setFontSize(18)
+        local fpsText = string.format("Time: %.1fs", time)
+        drawText(fpsText, 10, winSize.height - 40, 0.8, 0.8, 0.8)
+
+        -- Show text measurement
+        local measure = measureText("SDL3 + Lua Demo")
+        drawText("Title width: " .. measure.width .. "px", 10, winSize.height - 20, 0.6, 0.6, 0.6)
+    end
 end
 
 -- Key down event handler (global for C++ callback)
