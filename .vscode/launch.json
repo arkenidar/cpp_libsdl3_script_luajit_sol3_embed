@@ -26,7 +26,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/SDL3_Lua_Sol3.exe",
-            "args": [],
+            "args": ["scripts/test_phase3.lua"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
             "environment": [
