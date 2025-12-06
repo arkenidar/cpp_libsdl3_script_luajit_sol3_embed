@@ -289,6 +289,141 @@ public:
                 TTF_DestroyText(ttfText);
             }
         );
+
+        // Text input control functions
+        lua["startTextInput"] = [this]() {
+            if (window) {
+                SDL_StartTextInput(window);
+            }
+        };
+
+        lua["stopTextInput"] = [this]() {
+            if (window) {
+                SDL_StopTextInput(window);
+            }
+        };
+
+        lua["isTextInputActive"] = [this]() -> bool {
+            if (window) {
+                return SDL_TextInputActive(window);
+            }
+            return false;
+        };
+
+        lua["setTextInputArea"] = [this](float x, float y, float w, float h, int cursorOffset) {
+            if (window) {
+                SDL_Rect rect = {
+                    static_cast<int>(x),
+                    static_cast<int>(y),
+                    static_cast<int>(w),
+                    static_cast<int>(h)
+                };
+                SDL_SetTextInputArea(window, &rect, cursorOffset);
+            }
+        };
+
+        // Clipboard functions
+        lua["getClipboardText"] = []() -> std::string {
+            char* text = SDL_GetClipboardText();
+            if (text) {
+                std::string result(text);
+                SDL_free(text);
+                return result;
+            }
+            return "";
+        };
+
+        lua["setClipboardText"] = [](const std::string& text) -> bool {
+            return SDL_SetClipboardText(text.c_str());
+        };
+
+        lua["hasClipboardText"] = []() -> bool {
+            return SDL_HasClipboardText();
+        };
+
+        // Keyboard modifier state
+        lua["getKeyModifiers"] = [this]() -> sol::table {
+            SDL_Keymod mod = SDL_GetModState();
+            sol::table result = lua.create_table();
+            result["shift"] = (mod & SDL_KMOD_SHIFT) != 0;
+            result["ctrl"] = (mod & SDL_KMOD_CTRL) != 0;
+            result["alt"] = (mod & SDL_KMOD_ALT) != 0;
+            result["gui"] = (mod & SDL_KMOD_GUI) != 0;
+            return result;
+        };
+
+        // Drawing helper functions
+        lua["drawLine"] = [this](float x1, float y1, float x2, float y2, float r, float g, float b, float a) {
+            if (renderer) {
+                SDL_SetRenderDrawColor(renderer,
+                    static_cast<Uint8>(r * 255),
+                    static_cast<Uint8>(g * 255),
+                    static_cast<Uint8>(b * 255),
+                    static_cast<Uint8>(a * 255));
+                SDL_RenderLine(renderer, x1, y1, x2, y2);
+            }
+        };
+
+        lua["drawRectOutline"] = [this](float x, float y, float w, float h, float r, float g, float b, float a) {
+            if (renderer) {
+                SDL_SetRenderDrawColor(renderer,
+                    static_cast<Uint8>(r * 255),
+                    static_cast<Uint8>(g * 255),
+                    static_cast<Uint8>(b * 255),
+                    static_cast<Uint8>(a * 255));
+                SDL_FRect rect = {x, y, w, h};
+                SDL_RenderRect(renderer, &rect);
+            }
+        };
+
+        // Text measurement helpers for cursor positioning
+        lua["measureTextToOffset"] = [this](const std::string& text, int byteOffset) -> int {
+            if (!currentFont) return 0;
+            if (byteOffset <= 0) return 0;
+            if (byteOffset >= static_cast<int>(text.length())) {
+                int w = 0, h = 0;
+                TTF_GetStringSize(currentFont, text.c_str(), text.length(), &w, &h);
+                return w;
+            }
+
+            int w = 0, h = 0;
+            TTF_GetStringSize(currentFont, text.c_str(), byteOffset, &w, &h);
+            return w;
+        };
+
+        lua["getOffsetFromX"] = [this](const std::string& text, float targetX) -> int {
+            if (!currentFont || text.empty()) return 0;
+            if (targetX <= 0) return 0;
+
+            // Binary search for the byte offset closest to targetX
+            int low = 0;
+            int high = static_cast<int>(text.length());
+
+            while (low < high) {
+                int mid = (low + high + 1) / 2;
+                int w = 0, h = 0;
+                TTF_GetStringSize(currentFont, text.c_str(), mid, &w, &h);
+
+                if (w <= targetX) {
+                    low = mid;
+                } else {
+                    high = mid - 1;
+                }
+            }
+
+            // Check if we should snap to the next character
+            if (low < static_cast<int>(text.length())) {
+                int wLow = 0, wNext = 0, h = 0;
+                TTF_GetStringSize(currentFont, text.c_str(), low, &wLow, &h);
+                TTF_GetStringSize(currentFont, text.c_str(), low + 1, &wNext, &h);
+                float midPoint = (wLow + wNext) / 2.0f;
+                if (targetX > midPoint) {
+                    return low + 1;
+                }
+            }
+
+            return low;
+        };
     }
 
     bool loadScript(const std::string& scriptPath) {
@@ -330,8 +465,71 @@ public:
                         std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
                     }
                 }
+            } else if (event.type == SDL_EVENT_KEY_UP) {
+                // Call Lua onKeyUp if it exists
+                sol::optional<sol::function> onKeyUp = lua["onKeyUp"];
+                if (onKeyUp) {
+                    try {
+                        (*onKeyUp)(SDL_GetKeyName(event.key.key));
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onKeyUp error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+                // Call Lua onTextInput if it exists
+                sol::optional<sol::function> onTextInput = lua["onTextInput"];
+                if (onTextInput) {
+                    try {
+                        (*onTextInput)(event.text.text);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onTextInput error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                // Call Lua onMouseUp if it exists
+                sol::optional<sol::function> onMouseUp = lua["onMouseUp"];
+                if (onMouseUp) {
+                    try {
+                        (*onMouseUp)(event.button.x, event.button.y, event.button.button);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onMouseUp error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                // Call Lua onMouseWheel if it exists
+                sol::optional<sol::function> onMouseWheel = lua["onMouseWheel"];
+                if (onMouseWheel) {
+                    try {
+                        float mouseX, mouseY;
+                        SDL_GetMouseState(&mouseX, &mouseY);
+                        (*onMouseWheel)(mouseX, mouseY, event.wheel.x, event.wheel.y);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onMouseWheel error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                // Call Lua onMouseMove if it exists
+                sol::optional<sol::function> onMouseMove = lua["onMouseMove"];
+                if (onMouseMove) {
+                    try {
+                        (*onMouseMove)(event.motion.x, event.motion.y);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onMouseMove error: " << e.what() << std::endl;
+                    }
+                }
             } else if (event.type == SDL_EVENT_FINGER_DOWN) {
-                // Call Lua onMouseDown for touch events (normalized to window coordinates)
+                // Call Lua onTouchDown if it exists
+                sol::optional<sol::function> onTouchDown = lua["onTouchDown"];
+                if (onTouchDown) {
+                    try {
+                        float x = event.tfinger.x * windowWidth;
+                        float y = event.tfinger.y * windowHeight;
+                        (*onTouchDown)(event.tfinger.fingerID, x, y, event.tfinger.pressure);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onTouchDown error: " << e.what() << std::endl;
+                    }
+                }
+                // Also call onMouseDown for compatibility
                 sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
                 if (onMouseDown) {
                     try {
@@ -340,6 +538,32 @@ public:
                         (*onMouseDown)(x, y, 1); // Treat as left click
                     } catch (const sol::error& e) {
                         std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_FINGER_UP) {
+                // Call Lua onTouchUp if it exists
+                sol::optional<sol::function> onTouchUp = lua["onTouchUp"];
+                if (onTouchUp) {
+                    try {
+                        float x = event.tfinger.x * windowWidth;
+                        float y = event.tfinger.y * windowHeight;
+                        (*onTouchUp)(event.tfinger.fingerID, x, y);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onTouchUp error: " << e.what() << std::endl;
+                    }
+                }
+            } else if (event.type == SDL_EVENT_FINGER_MOTION) {
+                // Call Lua onTouchMove if it exists
+                sol::optional<sol::function> onTouchMove = lua["onTouchMove"];
+                if (onTouchMove) {
+                    try {
+                        float x = event.tfinger.x * windowWidth;
+                        float y = event.tfinger.y * windowHeight;
+                        float dx = event.tfinger.dx * windowWidth;
+                        float dy = event.tfinger.dy * windowHeight;
+                        (*onTouchMove)(event.tfinger.fingerID, x, y, dx, dy);
+                    } catch (const sol::error& e) {
+                        std::cerr << "Lua onTouchMove error: " << e.what() << std::endl;
                     }
                 }
             }
@@ -428,9 +652,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Load the main Lua script
-    if (!app.loadScript("scripts/main.lua")) {
-        std::cerr << "Failed to load main.lua" << std::endl;
+    // Load the Lua script (use command-line argument or default to main.lua)
+    std::string scriptPath = (argc > 1) ? argv[1] : "scripts/main.lua";
+    if (!app.loadScript(scriptPath)) {
+        std::cerr << "Failed to load " << scriptPath << std::endl;
         return 1;
     }
 
