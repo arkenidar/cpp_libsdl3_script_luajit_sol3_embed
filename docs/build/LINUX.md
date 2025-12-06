@@ -12,7 +12,7 @@ All distributions require:
 
 ---
 
-## Ubuntu / Debian
+## Ubuntu / Debian / Debian 13 (Trixie)
 
 ### Install Dependencies
 
@@ -24,14 +24,17 @@ sudo apt update
 sudo apt install cmake build-essential pkg-config git
 
 # Install SDL3 and SDL3_ttf
-# Note: SDL3 may not be in default repos yet; check below for alternatives
 sudo apt install libsdl3-dev libsdl3-ttf-dev
 
 # Install LuaJIT
 sudo apt install libluajit-5.1-dev
 ```
 
-### If SDL3 is not in repositories
+**Note for Debian 13 (Trixie):** SDL3 packages are available in the official repositories. Trixie includes `libsdl3-dev` and `libsdl3-ttf-dev` natively.
+
+**Note for older Debian/Ubuntu:** SDL3 may not be in default repos; see below for building from source.
+
+### If SDL3 is not in repositories (older distributions)
 
 SDL3 is relatively new. If not available:
 
