@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(SDL3 REQUIRED CONFIG)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUAJIT REQUIRED luajit)
+pkg_check_modules(SDL3_TTF REQUIRED sdl3-ttf)
 
 # Sol3 is header-only, we'll include it from a subdirectory
 # You can either:
@@ -29,11 +30,13 @@ add_executable(${PROJECT_NAME}
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${LUAJIT_INCLUDE_DIRS}
+    ${SDL3_TTF_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     SDL3::SDL3
     ${LUAJIT_LIBRARIES}
+    ${SDL3_TTF_LIBRARIES}
     sol2::sol2
 )
 
@@ -44,4 +47,13 @@ add_custom_command(
         ${CMAKE_SOURCE_DIR}/scripts
         ${CMAKE_BINARY_DIR}/scripts
     COMMENT "Copying Lua scripts to build directory"
+)
+
+# Copy assets to build directory (fonts, etc.)
+add_custom_command(
+    TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets
+        ${CMAKE_BINARY_DIR}/assets
+    COMMENT "Copying assets to build directory"
 )
