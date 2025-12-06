@@ -19,6 +19,36 @@ private:
     // TTF text rendering
     TTF_TextEngine* textEngine = nullptr;
 
+    // Font management with size caching
+    struct FontEntry {
+        std::string path;
+        std::map<float, TTF_Font*> sizeCache;  // size -> font instance
+    };
+    std::map<int, FontEntry> fonts;  // fontId -> FontEntry
+    int nextFontId = 1;
+    int currentFontId = 0;
+    float currentFontSize = 16.0f;
+    TTF_Font* currentFont = nullptr;
+
+    // Helper to get or create a font at a specific size
+    TTF_Font* getOrCreateFontAtSize(int fontId, float size) {
+        auto it = fonts.find(fontId);
+        if (it == fonts.end()) return nullptr;
+
+        auto& entry = it->second;
+        auto sizeIt = entry.sizeCache.find(size);
+        if (sizeIt != entry.sizeCache.end()) {
+            return sizeIt->second;
+        }
+
+        // Load font at new size
+        TTF_Font* font = TTF_OpenFont(entry.path.c_str(), size);
+        if (font) {
+            entry.sizeCache[size] = font;
+        }
+        return font;
+    }
+
 public:
     Application() {
         // Initialize Lua with standard libraries
@@ -117,6 +147,68 @@ public:
         // Expose print function
         lua["print"] = [](const std::string& msg) {
             std::cout << "[Lua] " << msg << std::endl;
+        };
+
+        // Font management functions
+        lua["loadFont"] = [this](const std::string& path, float size) -> sol::object {
+            TTF_Font* font = TTF_OpenFont(path.c_str(), size);
+            if (!font) {
+                std::cerr << "Failed to load font: " << path << " - " << SDL_GetError() << std::endl;
+                return sol::nil;
+            }
+
+            int fontId = nextFontId++;
+            fonts[fontId] = FontEntry{path, {{size, font}}};
+
+            // If no current font, set this as current
+            if (currentFontId == 0) {
+                currentFontId = fontId;
+                currentFontSize = size;
+                currentFont = font;
+            }
+
+            return sol::make_object(lua, fontId);
+        };
+
+        lua["setFont"] = [this](int fontId) -> bool {
+            TTF_Font* font = getOrCreateFontAtSize(fontId, currentFontSize);
+            if (!font) return false;
+
+            currentFontId = fontId;
+            currentFont = font;
+            return true;
+        };
+
+        lua["setFontSize"] = [this](float size) -> bool {
+            if (currentFontId == 0) return false;
+
+            TTF_Font* font = getOrCreateFontAtSize(currentFontId, size);
+            if (!font) return false;
+
+            currentFontSize = size;
+            currentFont = font;
+            return true;
+        };
+
+        lua["getFontSize"] = [this]() -> float {
+            return currentFontSize;
+        };
+
+        lua["closeFont"] = [this](int fontId) {
+            auto it = fonts.find(fontId);
+            if (it == fonts.end()) return;
+
+            // Close all cached sizes
+            for (auto& [size, font] : it->second.sizeCache) {
+                TTF_CloseFont(font);
+            }
+            fonts.erase(it);
+
+            // Clear current font if it was the one we closed
+            if (currentFontId == fontId) {
+                currentFontId = 0;
+                currentFont = nullptr;
+            }
         };
     }
 
@@ -221,6 +313,16 @@ public:
     }
 
     void cleanup() {
+        // Cleanup fonts
+        for (auto& [id, entry] : fonts) {
+            for (auto& [size, font] : entry.sizeCache) {
+                TTF_CloseFont(font);
+            }
+        }
+        fonts.clear();
+        currentFont = nullptr;
+        currentFontId = 0;
+
         // Cleanup TTF
         if (textEngine) {
             TTF_DestroyRendererTextEngine(textEngine);
