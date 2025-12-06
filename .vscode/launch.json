@@ -2,14 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug SDL3_Lua_Sol3",
+            "name": "[msys] Debug SDL3_Lua_Sol3",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/build/SDL3_Lua_Sol3",
+            "program": "${workspaceFolder}/build/SDL3_Lua_Sol3.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
-            "environment": [],
+            "environment": [
+                {
+                    "name": "PATH",
+                    "value": "C:/msys64/mingw64/bin;${env:PATH}"
+                }
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
@@ -19,7 +24,8 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Build Project"
+            "preLaunchTask": "Build Project",
+            "miDebuggerPath": "c:/msys64/mingw64/bin/gdb.exe"
         }
     ]
 }
