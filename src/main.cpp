@@ -176,19 +176,37 @@ private:
         float contentWidth = width - paddingX * 2;
         float contentHeight = height - paddingY * 2;
 
-        // Get cursor X position
-        int cursorX = getTextWidth(text, cursorPos);
+        // For multiline, we need cursor position within the current line
+        int cursorXInLine = 0;
+        int lineIdx = 0;
 
-        // Horizontal scrolling (single-line or within a line)
-        if (cursorX - scrollX < 0) {
-            scrollX = cursorX;
-        } else if (cursorX - scrollX > contentWidth) {
-            scrollX = cursorX - contentWidth;
+        if (multiline) {
+            auto lines = getLines();
+            int pos = 0;
+            for (size_t i = 0; i < lines.size(); i++) {
+                int lineEnd = pos + lines[i].length;
+                if (cursorPos <= lineEnd || i == lines.size() - 1) {
+                    lineIdx = static_cast<int>(i);
+                    int colInLine = cursorPos - pos;
+                    std::string lineText = text.substr(pos, lines[i].length);
+                    cursorXInLine = getTextWidth(lineText, colInLine);
+                    break;
+                }
+                pos = lineEnd + 1;
+            }
+        } else {
+            cursorXInLine = getTextWidth(text, cursorPos);
         }
 
-        // Vertical scrolling (multiline)
+        // Horizontal scrolling
+        if (cursorXInLine - scrollX < 0) {
+            scrollX = static_cast<float>(cursorXInLine);
+        } else if (cursorXInLine - scrollX > contentWidth) {
+            scrollX = cursorXInLine - contentWidth;
+        }
+
+        // Vertical scrolling (multiline only)
         if (multiline) {
-            auto [lineIdx, _] = getCursorLineInfo();
             float cursorY = lineIdx * fontHeight;
 
             if (cursorY - scrollY < 0) {
@@ -197,6 +215,10 @@ private:
                 scrollY = cursorY + fontHeight - contentHeight;
             }
         }
+
+        // Clamp scroll values to valid range
+        if (scrollX < 0) scrollX = 0;
+        if (scrollY < 0) scrollY = 0;
     }
 
 public:
