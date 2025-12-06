@@ -1,7 +1,9 @@
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <sol/sol.hpp>
 #include <iostream>
 #include <string>
+#include <map>
 
 class Application {
 private:
@@ -13,6 +15,9 @@ private:
     int windowWidth = 800;
     int windowHeight = 600;
     SDL_FColor bgColor = {0.1f, 0.1f, 0.15f, 1.0f};
+
+    // TTF text rendering
+    TTF_TextEngine* textEngine = nullptr;
 
 public:
     Application() {
@@ -47,6 +52,19 @@ public:
         renderer = SDL_CreateRenderer(window, nullptr);
         if (!renderer) {
             std::cerr << "SDL_CreateRenderer failed: " << SDL_GetError() << std::endl;
+            return false;
+        }
+
+        // Initialize SDL_ttf
+        if (!TTF_Init()) {
+            std::cerr << "TTF_Init failed: " << SDL_GetError() << std::endl;
+            return false;
+        }
+
+        // Create text engine for GPU-accelerated text rendering
+        textEngine = TTF_CreateRendererTextEngine(renderer);
+        if (!textEngine) {
+            std::cerr << "TTF_CreateRendererTextEngine failed: " << SDL_GetError() << std::endl;
             return false;
         }
 
@@ -203,6 +221,13 @@ public:
     }
 
     void cleanup() {
+        // Cleanup TTF
+        if (textEngine) {
+            TTF_DestroyRendererTextEngine(textEngine);
+            textEngine = nullptr;
+        }
+        TTF_Quit();
+
         if (renderer) {
             SDL_DestroyRenderer(renderer);
             renderer = nullptr;
