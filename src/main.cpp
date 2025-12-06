@@ -4,6 +4,679 @@
 #include <iostream>
 #include <string>
 #include <map>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+#include <memory>
+
+// Forward declaration
+class Application;
+
+// TextWidget class for text input/display
+class TextWidget {
+public:
+    // Configuration
+    float x = 0, y = 0;
+    float width = 200, height = 30;
+    bool multiline = false;
+    bool editable = true;
+
+    // Colors (normalized 0-1)
+    struct Colors {
+        float bgR = 0.15f, bgG = 0.15f, bgB = 0.2f, bgA = 1.0f;
+        float textR = 1.0f, textG = 1.0f, textB = 1.0f, textA = 1.0f;
+        float cursorR = 1.0f, cursorG = 1.0f, cursorB = 1.0f, cursorA = 1.0f;
+        float selectionR = 0.3f, selectionG = 0.5f, selectionB = 0.8f, selectionA = 0.5f;
+        float borderR = 0.4f, borderG = 0.4f, borderB = 0.5f, borderA = 1.0f;
+        float focusBorderR = 0.3f, focusBorderG = 0.6f, focusBorderB = 1.0f, focusBorderA = 1.0f;
+    } colors;
+
+    // Padding
+    float paddingX = 8.0f;
+    float paddingY = 6.0f;
+
+private:
+    // State
+    std::string text;
+    int cursorPos = 0;           // Byte offset in text
+    int selectionStart = -1;     // -1 means no selection
+    int selectionEnd = -1;
+    bool focused = false;
+    float cursorBlink = 0.0f;
+    float scrollX = 0.0f;
+    float scrollY = 0.0f;
+    bool isDragging = false;
+
+    // References (set by Application)
+    SDL_Renderer* renderer = nullptr;
+    TTF_TextEngine* textEngine = nullptr;
+    TTF_Font* font = nullptr;
+    int fontHeight = 16;
+    SDL_Window* window = nullptr;
+
+    // Helper: Get width of text substring
+    int getTextWidth(const std::string& str, size_t len) {
+        if (!font || len == 0) return 0;
+        int w = 0, h = 0;
+        TTF_GetStringSize(font, str.c_str(), len, &w, &h);
+        return w;
+    }
+
+    // Helper: Get byte offset from X position
+    int getOffsetFromX(const std::string& str, float targetX) {
+        if (!font || str.empty()) return 0;
+        if (targetX <= 0) return 0;
+
+        int low = 0;
+        int high = static_cast<int>(str.length());
+
+        while (low < high) {
+            int mid = (low + high + 1) / 2;
+            int w = getTextWidth(str, mid);
+            if (w <= targetX) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        // Snap to closer character
+        if (low < static_cast<int>(str.length())) {
+            int wLow = getTextWidth(str, low);
+            int wNext = getTextWidth(str, low + 1);
+            float midPoint = (wLow + wNext) / 2.0f;
+            if (targetX > midPoint) {
+                return low + 1;
+            }
+        }
+        return low;
+    }
+
+    // Helper: Get line info for multiline text
+    struct LineInfo {
+        int start;      // Byte offset of line start
+        int length;     // Byte length of line (excluding newline)
+    };
+
+    std::vector<LineInfo> getLines() {
+        std::vector<LineInfo> lines;
+        int start = 0;
+        for (size_t i = 0; i <= text.length(); i++) {
+            if (i == text.length() || text[i] == '\n') {
+                lines.push_back({start, static_cast<int>(i - start)});
+                start = static_cast<int>(i + 1);
+            }
+        }
+        return lines;
+    }
+
+    // Get current line index and position within line
+    std::pair<int, int> getCursorLineInfo() {
+        auto lines = getLines();
+        int pos = 0;
+        for (size_t i = 0; i < lines.size(); i++) {
+            int lineEnd = pos + lines[i].length;
+            if (cursorPos <= lineEnd || i == lines.size() - 1) {
+                return {static_cast<int>(i), cursorPos - pos};
+            }
+            pos = lineEnd + 1; // +1 for newline
+        }
+        return {0, 0};
+    }
+
+    // Move cursor to specific line and column
+    void moveCursorToLine(int lineIdx, int col) {
+        auto lines = getLines();
+        if (lineIdx < 0) lineIdx = 0;
+        if (lineIdx >= static_cast<int>(lines.size())) lineIdx = static_cast<int>(lines.size()) - 1;
+
+        int pos = 0;
+        for (int i = 0; i < lineIdx; i++) {
+            pos += lines[i].length + 1; // +1 for newline
+        }
+        col = std::max(0, std::min(col, lines[lineIdx].length));
+        cursorPos = pos + col;
+    }
+
+    // Clear selection
+    void clearSelection() {
+        selectionStart = -1;
+        selectionEnd = -1;
+    }
+
+    // Get ordered selection range
+    std::pair<int, int> getSelectionRange() {
+        if (selectionStart < 0) return {-1, -1};
+        return {std::min(selectionStart, selectionEnd), std::max(selectionStart, selectionEnd)};
+    }
+
+    // Delete selected text
+    void deleteSelection() {
+        auto [start, end] = getSelectionRange();
+        if (start >= 0) {
+            text.erase(start, end - start);
+            cursorPos = start;
+            clearSelection();
+        }
+    }
+
+    // Get selected text
+    std::string getSelectedText() {
+        auto [start, end] = getSelectionRange();
+        if (start >= 0) {
+            return text.substr(start, end - start);
+        }
+        return "";
+    }
+
+    // Ensure cursor is visible (auto-scroll)
+    void ensureCursorVisible() {
+        if (!font) return;
+
+        float contentWidth = width - paddingX * 2;
+        float contentHeight = height - paddingY * 2;
+
+        // Get cursor X position
+        int cursorX = getTextWidth(text, cursorPos);
+
+        // Horizontal scrolling (single-line or within a line)
+        if (cursorX - scrollX < 0) {
+            scrollX = cursorX;
+        } else if (cursorX - scrollX > contentWidth) {
+            scrollX = cursorX - contentWidth;
+        }
+
+        // Vertical scrolling (multiline)
+        if (multiline) {
+            auto [lineIdx, _] = getCursorLineInfo();
+            float cursorY = lineIdx * fontHeight;
+
+            if (cursorY - scrollY < 0) {
+                scrollY = cursorY;
+            } else if (cursorY + fontHeight - scrollY > contentHeight) {
+                scrollY = cursorY + fontHeight - contentHeight;
+            }
+        }
+    }
+
+public:
+    TextWidget() = default;
+
+    void init(SDL_Renderer* r, TTF_TextEngine* te, TTF_Font* f, SDL_Window* w) {
+        renderer = r;
+        textEngine = te;
+        font = f;
+        window = w;
+        if (font) {
+            fontHeight = TTF_GetFontHeight(font);
+        }
+    }
+
+    void setFont(TTF_Font* f) {
+        font = f;
+        if (font) {
+            fontHeight = TTF_GetFontHeight(font);
+        }
+    }
+
+    void setText(const std::string& t) {
+        text = t;
+        cursorPos = std::min(cursorPos, static_cast<int>(text.length()));
+        clearSelection();
+        ensureCursorVisible();
+    }
+
+    std::string getText() const { return text; }
+
+    void setPosition(float newX, float newY) {
+        x = newX;
+        y = newY;
+    }
+
+    void setSize(float w, float h) {
+        width = w;
+        height = h;
+    }
+
+    void setMultiline(bool m) { multiline = m; }
+    void setEditable(bool e) { editable = e; }
+
+    void setFocus(bool f) {
+        if (f != focused) {
+            focused = f;
+            cursorBlink = 0.0f;
+            if (focused && window) {
+                SDL_StartTextInput(window);
+            } else if (!focused && window) {
+                SDL_StopTextInput(window);
+            }
+        }
+    }
+
+    bool hasFocus() const { return focused; }
+
+    bool hitTest(float px, float py) {
+        return px >= x && px < x + width && py >= y && py < y + height;
+    }
+
+    void update(float dt) {
+        if (focused) {
+            cursorBlink += dt;
+            if (cursorBlink > 1.0f) cursorBlink -= 1.0f;
+        }
+    }
+
+    // Event handlers - return true if event was consumed
+    bool handleMouseDown(float mx, float my, int button) {
+        if (!hitTest(mx, my)) {
+            if (focused) setFocus(false);
+            return false;
+        }
+
+        setFocus(true);
+        cursorBlink = 0.0f;
+
+        // Calculate click position in text
+        float localX = mx - x - paddingX + scrollX;
+        float localY = my - y - paddingY + scrollY;
+
+        if (multiline) {
+            auto lines = getLines();
+            int lineIdx = std::max(0, std::min(static_cast<int>(localY / fontHeight), static_cast<int>(lines.size()) - 1));
+            int lineStart = 0;
+            for (int i = 0; i < lineIdx; i++) {
+                lineStart += lines[i].length + 1;
+            }
+            std::string lineText = text.substr(lineStart, lines[lineIdx].length);
+            int col = getOffsetFromX(lineText, localX);
+            cursorPos = lineStart + col;
+        } else {
+            cursorPos = getOffsetFromX(text, localX);
+        }
+
+        // Start selection on shift+click, otherwise clear
+        SDL_Keymod mod = SDL_GetModState();
+        if (mod & SDL_KMOD_SHIFT) {
+            if (selectionStart < 0) selectionStart = cursorPos;
+            selectionEnd = cursorPos;
+        } else {
+            clearSelection();
+            selectionStart = cursorPos;
+            selectionEnd = cursorPos;
+        }
+
+        isDragging = true;
+        return true;
+    }
+
+    bool handleMouseUp(float mx, float my, int button) {
+        isDragging = false;
+        // If selection is empty (start == end), clear it
+        if (selectionStart == selectionEnd) {
+            clearSelection();
+        }
+        return focused;
+    }
+
+    bool handleMouseMove(float mx, float my) {
+        if (!isDragging || !focused) return false;
+
+        float localX = mx - x - paddingX + scrollX;
+        float localY = my - y - paddingY + scrollY;
+
+        if (multiline) {
+            auto lines = getLines();
+            int lineIdx = std::max(0, std::min(static_cast<int>(localY / fontHeight), static_cast<int>(lines.size()) - 1));
+            int lineStart = 0;
+            for (int i = 0; i < lineIdx; i++) {
+                lineStart += lines[i].length + 1;
+            }
+            std::string lineText = text.substr(lineStart, lines[lineIdx].length);
+            int col = getOffsetFromX(lineText, localX);
+            cursorPos = lineStart + col;
+        } else {
+            cursorPos = getOffsetFromX(text, localX);
+        }
+
+        selectionEnd = cursorPos;
+        ensureCursorVisible();
+        return true;
+    }
+
+    bool handleKeyDown(const std::string& key, bool shift, bool ctrl) {
+        if (!focused) return false;
+
+        cursorBlink = 0.0f;
+
+        // Navigation
+        if (key == "Left") {
+            if (shift) {
+                if (selectionStart < 0) selectionStart = cursorPos;
+            } else {
+                if (selectionStart >= 0) {
+                    cursorPos = getSelectionRange().first;
+                    clearSelection();
+                    ensureCursorVisible();
+                    return true;
+                }
+            }
+            if (cursorPos > 0) cursorPos--;
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Right") {
+            if (shift) {
+                if (selectionStart < 0) selectionStart = cursorPos;
+            } else {
+                if (selectionStart >= 0) {
+                    cursorPos = getSelectionRange().second;
+                    clearSelection();
+                    ensureCursorVisible();
+                    return true;
+                }
+            }
+            if (cursorPos < static_cast<int>(text.length())) cursorPos++;
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Up" && multiline) {
+            auto [lineIdx, col] = getCursorLineInfo();
+            if (shift && selectionStart < 0) selectionStart = cursorPos;
+            if (lineIdx > 0) {
+                moveCursorToLine(lineIdx - 1, col);
+            }
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Down" && multiline) {
+            auto [lineIdx, col] = getCursorLineInfo();
+            if (shift && selectionStart < 0) selectionStart = cursorPos;
+            auto lines = getLines();
+            if (lineIdx < static_cast<int>(lines.size()) - 1) {
+                moveCursorToLine(lineIdx + 1, col);
+            }
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Home") {
+            if (shift && selectionStart < 0) selectionStart = cursorPos;
+            if (multiline) {
+                auto [lineIdx, _] = getCursorLineInfo();
+                moveCursorToLine(lineIdx, 0);
+            } else {
+                cursorPos = 0;
+            }
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "End") {
+            if (shift && selectionStart < 0) selectionStart = cursorPos;
+            if (multiline) {
+                auto [lineIdx, _] = getCursorLineInfo();
+                auto lines = getLines();
+                moveCursorToLine(lineIdx, lines[lineIdx].length);
+            } else {
+                cursorPos = static_cast<int>(text.length());
+            }
+            if (shift) selectionEnd = cursorPos;
+            else clearSelection();
+            ensureCursorVisible();
+            return true;
+        }
+
+        // Ctrl+A - Select all
+        if (ctrl && (key == "A" || key == "a")) {
+            selectionStart = 0;
+            selectionEnd = static_cast<int>(text.length());
+            cursorPos = selectionEnd;
+            return true;
+        }
+
+        // Clipboard operations
+        if (ctrl && (key == "C" || key == "c")) {
+            std::string selected = getSelectedText();
+            if (!selected.empty()) {
+                SDL_SetClipboardText(selected.c_str());
+            }
+            return true;
+        }
+
+        if (ctrl && (key == "X" || key == "x") && editable) {
+            std::string selected = getSelectedText();
+            if (!selected.empty()) {
+                SDL_SetClipboardText(selected.c_str());
+                deleteSelection();
+            }
+            return true;
+        }
+
+        if (ctrl && (key == "V" || key == "v") && editable) {
+            char* clip = SDL_GetClipboardText();
+            if (clip) {
+                deleteSelection();
+                std::string clipStr(clip);
+                // Remove newlines if single-line
+                if (!multiline) {
+                    clipStr.erase(std::remove(clipStr.begin(), clipStr.end(), '\n'), clipStr.end());
+                    clipStr.erase(std::remove(clipStr.begin(), clipStr.end(), '\r'), clipStr.end());
+                }
+                text.insert(cursorPos, clipStr);
+                cursorPos += static_cast<int>(clipStr.length());
+                SDL_free(clip);
+                ensureCursorVisible();
+            }
+            return true;
+        }
+
+        // Editing
+        if (key == "Backspace" && editable) {
+            if (selectionStart >= 0) {
+                deleteSelection();
+            } else if (cursorPos > 0) {
+                text.erase(cursorPos - 1, 1);
+                cursorPos--;
+            }
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Delete" && editable) {
+            if (selectionStart >= 0) {
+                deleteSelection();
+            } else if (cursorPos < static_cast<int>(text.length())) {
+                text.erase(cursorPos, 1);
+            }
+            ensureCursorVisible();
+            return true;
+        }
+
+        if (key == "Return" && editable && multiline) {
+            deleteSelection();
+            text.insert(cursorPos, 1, '\n');
+            cursorPos++;
+            ensureCursorVisible();
+            return true;
+        }
+
+        return false;
+    }
+
+    bool handleTextInput(const std::string& inputText) {
+        if (!focused || !editable) return false;
+
+        deleteSelection();
+
+        std::string toInsert = inputText;
+        if (!multiline) {
+            // Remove newlines for single-line
+            toInsert.erase(std::remove(toInsert.begin(), toInsert.end(), '\n'), toInsert.end());
+            toInsert.erase(std::remove(toInsert.begin(), toInsert.end(), '\r'), toInsert.end());
+        }
+
+        text.insert(cursorPos, toInsert);
+        cursorPos += static_cast<int>(toInsert.length());
+        cursorBlink = 0.0f;
+        ensureCursorVisible();
+        return true;
+    }
+
+    void render() {
+        if (!renderer || !font || !textEngine) return;
+
+        // Background
+        SDL_SetRenderDrawColor(renderer,
+            static_cast<Uint8>(colors.bgR * 255),
+            static_cast<Uint8>(colors.bgG * 255),
+            static_cast<Uint8>(colors.bgB * 255),
+            static_cast<Uint8>(colors.bgA * 255));
+        SDL_FRect bgRect = {x, y, width, height};
+        SDL_RenderFillRect(renderer, &bgRect);
+
+        // Border
+        if (focused) {
+            SDL_SetRenderDrawColor(renderer,
+                static_cast<Uint8>(colors.focusBorderR * 255),
+                static_cast<Uint8>(colors.focusBorderG * 255),
+                static_cast<Uint8>(colors.focusBorderB * 255),
+                static_cast<Uint8>(colors.focusBorderA * 255));
+        } else {
+            SDL_SetRenderDrawColor(renderer,
+                static_cast<Uint8>(colors.borderR * 255),
+                static_cast<Uint8>(colors.borderG * 255),
+                static_cast<Uint8>(colors.borderB * 255),
+                static_cast<Uint8>(colors.borderA * 255));
+        }
+        SDL_RenderRect(renderer, &bgRect);
+
+        // Set clip rect for text area
+        SDL_Rect clipRect = {
+            static_cast<int>(x + 1),
+            static_cast<int>(y + 1),
+            static_cast<int>(width - 2),
+            static_cast<int>(height - 2)
+        };
+        SDL_SetRenderClipRect(renderer, &clipRect);
+
+        float textX = x + paddingX - scrollX;
+        float textY = y + paddingY - scrollY;
+
+        // Draw selection highlight
+        auto [selStart, selEnd] = getSelectionRange();
+        if (selStart >= 0 && selStart != selEnd) {
+            SDL_SetRenderDrawColor(renderer,
+                static_cast<Uint8>(colors.selectionR * 255),
+                static_cast<Uint8>(colors.selectionG * 255),
+                static_cast<Uint8>(colors.selectionB * 255),
+                static_cast<Uint8>(colors.selectionA * 255));
+
+            if (multiline) {
+                auto lines = getLines();
+                int pos = 0;
+                for (size_t i = 0; i < lines.size(); i++) {
+                    int lineEnd = pos + lines[i].length;
+                    if (selEnd > pos && selStart < lineEnd + 1) {
+                        int lineSelStart = std::max(selStart - pos, 0);
+                        int lineSelEnd = std::min(selEnd - pos, lines[i].length);
+                        std::string lineText = text.substr(pos, lines[i].length);
+                        float selX1 = textX + getTextWidth(lineText, lineSelStart);
+                        float selX2 = textX + getTextWidth(lineText, lineSelEnd);
+                        SDL_FRect selRect = {selX1, textY + i * fontHeight, selX2 - selX1, static_cast<float>(fontHeight)};
+                        SDL_RenderFillRect(renderer, &selRect);
+                    }
+                    pos = lineEnd + 1;
+                }
+            } else {
+                float selX1 = textX + getTextWidth(text, selStart);
+                float selX2 = textX + getTextWidth(text, selEnd);
+                SDL_FRect selRect = {selX1, textY, selX2 - selX1, static_cast<float>(fontHeight)};
+                SDL_RenderFillRect(renderer, &selRect);
+            }
+        }
+
+        // Draw text
+        if (!text.empty()) {
+            if (multiline) {
+                auto lines = getLines();
+                int pos = 0;
+                for (size_t i = 0; i < lines.size(); i++) {
+                    if (lines[i].length > 0) {
+                        std::string lineText = text.substr(pos, lines[i].length);
+                        TTF_Text* ttfText = TTF_CreateText(textEngine, font, lineText.c_str(), lineText.length());
+                        if (ttfText) {
+                            SDL_Color color = {
+                                static_cast<Uint8>(colors.textR * 255),
+                                static_cast<Uint8>(colors.textG * 255),
+                                static_cast<Uint8>(colors.textB * 255),
+                                static_cast<Uint8>(colors.textA * 255)
+                            };
+                            TTF_SetTextColor(ttfText, color.r, color.g, color.b, color.a);
+                            TTF_DrawRendererText(ttfText, textX, textY + i * fontHeight);
+                            TTF_DestroyText(ttfText);
+                        }
+                    }
+                    pos += lines[i].length + 1;
+                }
+            } else {
+                TTF_Text* ttfText = TTF_CreateText(textEngine, font, text.c_str(), text.length());
+                if (ttfText) {
+                    SDL_Color color = {
+                        static_cast<Uint8>(colors.textR * 255),
+                        static_cast<Uint8>(colors.textG * 255),
+                        static_cast<Uint8>(colors.textB * 255),
+                        static_cast<Uint8>(colors.textA * 255)
+                    };
+                    TTF_SetTextColor(ttfText, color.r, color.g, color.b, color.a);
+                    TTF_DrawRendererText(ttfText, textX, textY);
+                    TTF_DestroyText(ttfText);
+                }
+            }
+        }
+
+        // Draw cursor
+        if (focused && cursorBlink < 0.5f) {
+            float cursorX, cursorY;
+            if (multiline) {
+                auto [lineIdx, col] = getCursorLineInfo();
+                auto lines = getLines();
+                int lineStart = 0;
+                for (int i = 0; i < lineIdx; i++) {
+                    lineStart += lines[i].length + 1;
+                }
+                std::string lineText = text.substr(lineStart, col);
+                cursorX = textX + getTextWidth(lineText, col);
+                cursorY = textY + lineIdx * fontHeight;
+            } else {
+                cursorX = textX + getTextWidth(text, cursorPos);
+                cursorY = textY;
+            }
+
+            SDL_SetRenderDrawColor(renderer,
+                static_cast<Uint8>(colors.cursorR * 255),
+                static_cast<Uint8>(colors.cursorG * 255),
+                static_cast<Uint8>(colors.cursorB * 255),
+                static_cast<Uint8>(colors.cursorA * 255));
+            SDL_RenderLine(renderer, cursorX, cursorY + 2, cursorX, cursorY + fontHeight - 2);
+        }
+
+        // Reset clip rect
+        SDL_SetRenderClipRect(renderer, nullptr);
+    }
+};
 
 class Application {
 private:
@@ -29,6 +702,10 @@ private:
     int currentFontId = 0;
     float currentFontSize = 16.0f;
     TTF_Font* currentFont = nullptr;
+
+    // TextWidget management
+    std::map<int, std::shared_ptr<TextWidget>> textWidgets;
+    int nextWidgetId = 1;
 
     // Helper to get or create a font at a specific size
     TTF_Font* getOrCreateFontAtSize(int fontId, float size) {
@@ -424,6 +1101,170 @@ public:
 
             return low;
         };
+
+        // TextWidget API
+        lua["createTextWidget"] = [this](sol::table config) -> sol::object {
+            auto widget = std::make_shared<TextWidget>();
+
+            // Position and size
+            widget->x = config.get_or("x", 0.0f);
+            widget->y = config.get_or("y", 0.0f);
+            widget->width = config.get_or("width", 200.0f);
+            widget->height = config.get_or("height", 30.0f);
+
+            // Options
+            widget->multiline = config.get_or("multiline", false);
+            widget->editable = config.get_or("editable", true);
+
+            // Initialize with current renderer/font
+            widget->init(renderer, textEngine, currentFont, window);
+
+            // Store widget
+            int widgetId = nextWidgetId++;
+            textWidgets[widgetId] = widget;
+
+            // Create Lua userdata table with methods
+            sol::table widgetTable = lua.create_table();
+            widgetTable["_id"] = widgetId;
+
+            widgetTable["setText"] = [this](sol::table self, const std::string& text) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setText(text);
+                }
+            };
+
+            widgetTable["getText"] = [this](sol::table self) -> std::string {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    return it->second->getText();
+                }
+                return "";
+            };
+
+            widgetTable["setPosition"] = [this](sol::table self, float x, float y) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setPosition(x, y);
+                }
+            };
+
+            widgetTable["setSize"] = [this](sol::table self, float w, float h) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setSize(w, h);
+                }
+            };
+
+            widgetTable["setMultiline"] = [this](sol::table self, bool multiline) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setMultiline(multiline);
+                }
+            };
+
+            widgetTable["setEditable"] = [this](sol::table self, bool editable) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setEditable(editable);
+                }
+            };
+
+            widgetTable["setFocus"] = [this](sol::table self, bool focus) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->setFocus(focus);
+                }
+            };
+
+            widgetTable["hasFocus"] = [this](sol::table self) -> bool {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    return it->second->hasFocus();
+                }
+                return false;
+            };
+
+            widgetTable["update"] = [this](sol::table self, float dt) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->update(dt);
+                }
+            };
+
+            widgetTable["render"] = [this](sol::table self) {
+                int id = self["_id"];
+                auto it = textWidgets.find(id);
+                if (it != textWidgets.end()) {
+                    it->second->render();
+                }
+            };
+
+            widgetTable["destroy"] = [this](sol::table self) {
+                int id = self["_id"];
+                textWidgets.erase(id);
+            };
+
+            return sol::make_object(lua, widgetTable);
+        };
+
+        // Route events to widgets (called before Lua callbacks)
+        lua["_routeWidgetMouseDown"] = [this](float x, float y, int button) -> bool {
+            for (auto& [id, widget] : textWidgets) {
+                if (widget->handleMouseDown(x, y, button)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        lua["_routeWidgetMouseUp"] = [this](float x, float y, int button) -> bool {
+            for (auto& [id, widget] : textWidgets) {
+                if (widget->handleMouseUp(x, y, button)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        lua["_routeWidgetMouseMove"] = [this](float x, float y) -> bool {
+            for (auto& [id, widget] : textWidgets) {
+                if (widget->handleMouseMove(x, y)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        lua["_routeWidgetKeyDown"] = [this](const std::string& key) -> bool {
+            SDL_Keymod mod = SDL_GetModState();
+            bool shift = (mod & SDL_KMOD_SHIFT) != 0;
+            bool ctrl = (mod & SDL_KMOD_CTRL) != 0;
+            for (auto& [id, widget] : textWidgets) {
+                if (widget->handleKeyDown(key, shift, ctrl)) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        lua["_routeWidgetTextInput"] = [this](const std::string& text) -> bool {
+            for (auto& [id, widget] : textWidgets) {
+                if (widget->handleTextInput(text)) {
+                    return true;
+                }
+            }
+            return false;
+        };
     }
 
     bool loadScript(const std::string& scriptPath) {
@@ -446,23 +1287,47 @@ public:
                 windowWidth = event.window.data1;
                 windowHeight = event.window.data2;
             } else if (event.type == SDL_EVENT_KEY_DOWN) {
-                // Call Lua onKeyDown if it exists
-                sol::optional<sol::function> onKeyDown = lua["onKeyDown"];
-                if (onKeyDown) {
-                    try {
-                        (*onKeyDown)(SDL_GetKeyName(event.key.key));
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onKeyDown error: " << e.what() << std::endl;
+                // Route to widgets first
+                std::string keyName = SDL_GetKeyName(event.key.key);
+                SDL_Keymod mod = SDL_GetModState();
+                bool shift = (mod & SDL_KMOD_SHIFT) != 0;
+                bool ctrl = (mod & SDL_KMOD_CTRL) != 0;
+                bool consumed = false;
+                for (auto& [id, widget] : textWidgets) {
+                    if (widget->handleKeyDown(keyName, shift, ctrl)) {
+                        consumed = true;
+                        break;
+                    }
+                }
+                // Call Lua onKeyDown if not consumed by widget
+                if (!consumed) {
+                    sol::optional<sol::function> onKeyDown = lua["onKeyDown"];
+                    if (onKeyDown) {
+                        try {
+                            (*onKeyDown)(keyName);
+                        } catch (const sol::error& e) {
+                            std::cerr << "Lua onKeyDown error: " << e.what() << std::endl;
+                        }
                     }
                 }
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                // Call Lua onMouseDown if it exists
-                sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
-                if (onMouseDown) {
-                    try {
-                        (*onMouseDown)(event.button.x, event.button.y, event.button.button);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
+                // Route to widgets first
+                bool consumed = false;
+                for (auto& [id, widget] : textWidgets) {
+                    if (widget->handleMouseDown(event.button.x, event.button.y, event.button.button)) {
+                        consumed = true;
+                        break;
+                    }
+                }
+                // Call Lua onMouseDown if not consumed
+                if (!consumed) {
+                    sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
+                    if (onMouseDown) {
+                        try {
+                            (*onMouseDown)(event.button.x, event.button.y, event.button.button);
+                        } catch (const sol::error& e) {
+                            std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
+                        }
                     }
                 }
             } else if (event.type == SDL_EVENT_KEY_UP) {
@@ -476,17 +1341,31 @@ public:
                     }
                 }
             } else if (event.type == SDL_EVENT_TEXT_INPUT) {
-                // Call Lua onTextInput if it exists
-                sol::optional<sol::function> onTextInput = lua["onTextInput"];
-                if (onTextInput) {
-                    try {
-                        (*onTextInput)(event.text.text);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onTextInput error: " << e.what() << std::endl;
+                // Route to widgets first
+                bool consumed = false;
+                for (auto& [id, widget] : textWidgets) {
+                    if (widget->handleTextInput(event.text.text)) {
+                        consumed = true;
+                        break;
+                    }
+                }
+                // Call Lua onTextInput if not consumed
+                if (!consumed) {
+                    sol::optional<sol::function> onTextInput = lua["onTextInput"];
+                    if (onTextInput) {
+                        try {
+                            (*onTextInput)(event.text.text);
+                        } catch (const sol::error& e) {
+                            std::cerr << "Lua onTextInput error: " << e.what() << std::endl;
+                        }
                     }
                 }
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                // Call Lua onMouseUp if it exists
+                // Route to widgets first
+                for (auto& [id, widget] : textWidgets) {
+                    widget->handleMouseUp(event.button.x, event.button.y, event.button.button);
+                }
+                // Always call Lua onMouseUp
                 sol::optional<sol::function> onMouseUp = lua["onMouseUp"];
                 if (onMouseUp) {
                     try {
@@ -508,7 +1387,11 @@ public:
                     }
                 }
             } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                // Call Lua onMouseMove if it exists
+                // Route to widgets first (for drag selection)
+                for (auto& [id, widget] : textWidgets) {
+                    widget->handleMouseMove(event.motion.x, event.motion.y);
+                }
+                // Always call Lua onMouseMove
                 sol::optional<sol::function> onMouseMove = lua["onMouseMove"];
                 if (onMouseMove) {
                     try {
