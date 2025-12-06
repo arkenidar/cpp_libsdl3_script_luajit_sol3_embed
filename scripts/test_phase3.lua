@@ -78,6 +78,7 @@ function render()
     drawText("- Shift+Arrow: select text", 50, y, 0.6, 0.6, 0.6); y = y + 18
     drawText("- Ctrl+A: select all", 50, y, 0.6, 0.6, 0.6); y = y + 18
     drawText("- Ctrl+C/X/V: copy/cut/paste", 50, y, 0.6, 0.6, 0.6); y = y + 18
+    drawText("- Ctrl+Z: undo, Ctrl+Y or Ctrl+Shift+Z: redo", 50, y, 0.6, 0.6, 0.6); y = y + 18
     drawText("- Home/End: go to line start/end", 50, y, 0.6, 0.6, 0.6); y = y + 18
     drawText("- Click and drag to select with mouse", 50, y, 0.6, 0.6, 0.6); y = y + 18
     drawText("- Enter key inserts newline in multiline mode", 50, y, 0.6, 0.6, 0.6); y = y + 25

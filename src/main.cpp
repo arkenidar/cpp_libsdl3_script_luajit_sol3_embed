@@ -47,6 +47,15 @@ private:
     float scrollY = 0.0f;
     bool isDragging = false;
 
+    // Undo/Redo stacks
+    struct UndoState {
+        std::string text;
+        int cursorPos;
+    };
+    std::vector<UndoState> undoStack;
+    std::vector<UndoState> redoStack;
+    static const size_t MAX_UNDO_HISTORY = 100;
+
     // References (set by Application)
     SDL_Renderer* renderer = nullptr;
     TTF_TextEngine* textEngine = nullptr;
@@ -167,6 +176,52 @@ private:
             return text.substr(start, end - start);
         }
         return "";
+    }
+
+    // Save current state for undo
+    void saveUndoState() {
+        // Don't save if text hasn't changed from last undo state
+        if (!undoStack.empty() && undoStack.back().text == text) {
+            return;
+        }
+        undoStack.push_back({text, cursorPos});
+        if (undoStack.size() > MAX_UNDO_HISTORY) {
+            undoStack.erase(undoStack.begin());
+        }
+        // Clear redo stack when new action is performed
+        redoStack.clear();
+    }
+
+    // Undo last action
+    void undo() {
+        if (undoStack.empty()) return;
+
+        // Save current state to redo stack
+        redoStack.push_back({text, cursorPos});
+
+        // Restore previous state
+        UndoState state = undoStack.back();
+        undoStack.pop_back();
+        text = state.text;
+        cursorPos = std::min(state.cursorPos, static_cast<int>(text.length()));
+        clearSelection();
+        ensureCursorVisible();
+    }
+
+    // Redo last undone action
+    void redo() {
+        if (redoStack.empty()) return;
+
+        // Save current state to undo stack
+        undoStack.push_back({text, cursorPos});
+
+        // Restore redo state
+        UndoState state = redoStack.back();
+        redoStack.pop_back();
+        text = state.text;
+        cursorPos = std::min(state.cursorPos, static_cast<int>(text.length()));
+        clearSelection();
+        ensureCursorVisible();
     }
 
     // Ensure cursor is visible (auto-scroll)
@@ -469,6 +524,22 @@ public:
             return true;
         }
 
+        // Undo/Redo
+        if (ctrl && !shift && (key == "Z" || key == "z") && editable) {
+            undo();
+            return true;
+        }
+
+        if (ctrl && (key == "Y" || key == "y") && editable) {
+            redo();
+            return true;
+        }
+
+        if (ctrl && shift && (key == "Z" || key == "z") && editable) {
+            redo();
+            return true;
+        }
+
         // Clipboard operations
         if (ctrl && (key == "C" || key == "c")) {
             std::string selected = getSelectedText();
@@ -481,6 +552,7 @@ public:
         if (ctrl && (key == "X" || key == "x") && editable) {
             std::string selected = getSelectedText();
             if (!selected.empty()) {
+                saveUndoState();
                 SDL_SetClipboardText(selected.c_str());
                 deleteSelection();
             }
@@ -490,6 +562,7 @@ public:
         if (ctrl && (key == "V" || key == "v") && editable) {
             char* clip = SDL_GetClipboardText();
             if (clip) {
+                saveUndoState();
                 deleteSelection();
                 std::string clipStr(clip);
                 // Remove newlines if single-line
@@ -507,6 +580,7 @@ public:
 
         // Editing
         if (key == "Backspace" && editable) {
+            saveUndoState();
             if (selectionStart >= 0) {
                 deleteSelection();
             } else if (cursorPos > 0) {
@@ -518,6 +592,7 @@ public:
         }
 
         if (key == "Delete" && editable) {
+            saveUndoState();
             if (selectionStart >= 0) {
                 deleteSelection();
             } else if (cursorPos < static_cast<int>(text.length())) {
@@ -528,6 +603,7 @@ public:
         }
 
         if (key == "Return" && editable && multiline) {
+            saveUndoState();
             deleteSelection();
             text.insert(cursorPos, 1, '\n');
             cursorPos++;
@@ -541,6 +617,7 @@ public:
     bool handleTextInput(const std::string& inputText) {
         if (!focused || !editable) return false;
 
+        saveUndoState();
         deleteSelection();
 
         std::string toInsert = inputText;
