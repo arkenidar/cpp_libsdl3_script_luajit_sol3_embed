@@ -9,7 +9,7 @@ Add text rendering and a full-featured text widget to the SDL3/LuaJIT/Sol3 proje
 |-------|-------------|--------|
 | Phase 1 | Foundation (Basic Text Rendering) | ✅ Complete |
 | Phase 2 | Text Widget Primitives | ✅ Complete |
-| Phase 3 | Text Widget | ⏳ Pending |
+| Phase 3 | Text Widget | 🔄 In Progress |
 
 ## Files to Modify
 - `src/main.cpp` - Core changes: TTF init, font management, text rendering, TextWidget class
@@ -194,10 +194,16 @@ Modify handleEvents() to route keyboard/mouse/text events to focused TextWidget 
 | 2.5 | Add drawLine, drawRectOutline | ✅ |
 | 2.6 | Add measureTextToOffset, getOffsetFromX | ✅ |
 | 2.7 | Test Phase 2 in Lua (test_phase2.lua) | ✅ |
-| 3.1 | Implement TextWidget class |
-| 3.2 | Add TextWidget Lua bindings |
-| 3.3 | Add event routing to widgets |
-| 3.4 | Test full widget functionality |
+| 3.1 | Implement TextWidget class | ✅ |
+| 3.2 | Add TextWidget Lua bindings | ✅ |
+| 3.3 | Add event routing to widgets | ✅ |
+| 3.4 | Test full widget functionality | ✅ |
+| 3.5 | Add Page Up/Page Down keys | |
+| 3.6 | Add mouse wheel scrolling for widgets | |
+| 3.7 | Add scrollbar UI (vertical/horizontal) | |
+| 3.8 | Add scrollbar interactivity (drag, click track) | |
+| 3.9 | Add touch swipe/fling with momentum | |
+| 3.10 | Improve widget system architecture | |
 
 ---
 

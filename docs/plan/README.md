@@ -6,7 +6,7 @@ This directory contains implementation plans for features being developed in the
 
 | Plan | Description | Status |
 |------|-------------|--------|
-| [text-widget-plan.md](text-widget-plan.md) | Text rendering and text widget implementation | Phase 1 Complete |
+| [text-widget-plan.md](text-widget-plan.md) | Text rendering and text widget implementation | Phase 3 In Progress |
 
 ## Using Plans with Claude Code
 
