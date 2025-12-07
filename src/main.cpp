@@ -1411,6 +1411,13 @@ public:
                 }
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
                 // Route to widgets first
+                // First, unfocus all widgets so only the clicked one will have focus
+                for (auto& [id, widget] : textWidgets) {
+                    if (widget->hasFocus() && !widget->hitTest(event.button.x, event.button.y)) {
+                        widget->setFocus(false);
+                    }
+                }
+                // Now handle the click
                 bool consumed = false;
                 for (auto& [id, widget] : textWidgets) {
                     if (widget->handleMouseDown(event.button.x, event.button.y, event.button.button)) {
