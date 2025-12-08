@@ -83,6 +83,8 @@ FetchContent_MakeAvailable(sol2)
 # === Main executable ===
 add_executable(${PROJECT_NAME}
     src/main.cpp
+    src/widgets/TextWidget.cpp
+    src/graphics/FontManager.cpp
 )
 
 # Include directories
