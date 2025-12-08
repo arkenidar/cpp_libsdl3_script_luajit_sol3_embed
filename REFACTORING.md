@@ -51,39 +51,51 @@ This document tracks the progress of refactoring the monolithic `src/main.cpp` (
 
 ---
 
+### ✅ Phase 3: EventHandler Extraction
+**Commit:** 99c498a
+
+**Created Files:**
+- `src/events/EventHandler.hpp` (48 lines) - Event handling interface
+- `src/events/EventHandler.cpp` (268 lines) - Implementation
+
+**Key Features Extracted:**
+- SDL event polling and dispatch
+- Widget event routing (keyboard, mouse, touch, text input)
+- Lua callback invocations for all event types
+- Handles 12 event types: quit, resize, key up/down, mouse button/motion/wheel, text input, touch down/up/motion
+- Dependency injection pattern for clean testing
+
+**Updated Components:**
+- Application class uses EventHandler via unique_ptr
+- Event handling delegated to eventHandler->handleEvents()
+- Clean separation between SDL events, widget routing, and Lua callbacks
+
+**Lines Removed from main.cpp:** ~180
+
+---
+
 ## Progress Summary
 
-| Metric | Before | After Phase 2 | Change |
+| Metric | Before | After Phase 3 | Change |
 |--------|---------|---------------|---------|
-| main.cpp lines | 1,654 | ~890 | -764 (-46%) |
-| Files | 1 | 6 | +5 |
-| Modules | 0 | 2 | +2 |
+| main.cpp lines | 1,654 | 660 | -994 (-60%) |
+| Files | 1 | 9 | +8 |
+| Modules | 0 | 3 | +3 |
 | Largest file | 1,654 | 707 | -947 |
-| Average file size | 1,654 | 342 | -1,312 |
+| Average file size | 1,654 | 218 | -1,436 |
 
 ---
 
 ## Remaining Phases
 
-### 🔲 Phase 3: EventHandler Extraction
-**Estimated Impact:** ~200 lines
+### ⏭️ Phase 4: Lua Bindings Extraction - SKIPPED
+**Decision:** This phase was intentionally skipped after analysis revealed that Lua bindings are too tightly coupled with the Application class. Extracting them would require major architectural refactoring and provide minimal benefit.
 
-**Target Code:**
-- `handleEvents()` method (lines 1,380-1,560 in original)
-- SDL event processing and dispatch
-- Widget event routing
-- Lua callback invocations
+**Reasoning:** The `setupLuaBindings()` method requires deep access to Application's private members (window, renderer, fontManager, textWidgets, etc.). Creating a separate module would require either extensive friend declarations or public accessor methods, violating encapsulation principles without meaningful gains in modularity.
 
-**Planned Files:**
-- `src/events/EventHandler.hpp`
-- `src/events/EventHandler.cpp`
+**Original Estimated Impact:** ~500 lines
 
----
-
-### 🔲 Phase 4: Lua Bindings Extraction
-**Estimated Impact:** ~500 lines
-
-**Target Code:**
+**Original Target Code:**
 - `setupLuaBindings()` method (lines 883-1,366 in original)
 - 9 categories of Lua API bindings:
   1. Window/display management
@@ -119,13 +131,16 @@ This document tracks the progress of refactoring the monolithic `src/main.cpp` (
 ### Current Module Structure
 ```
 src/
-├── main.cpp                    (~890 lines - Application class + main())
+├── main.cpp                    (~660 lines - Application class + main())
 ├── widgets/
 │   ├── TextWidget.hpp          (145 lines)
 │   └── TextWidget.cpp          (707 lines)
-└── graphics/
-    ├── FontManager.hpp         (57 lines)
-    └── FontManager.cpp         (100 lines)
+├── graphics/
+│   ├── FontManager.hpp         (57 lines)
+│   └── FontManager.cpp         (100 lines)
+└── events/
+    ├── EventHandler.hpp        (48 lines)
+    └── EventHandler.cpp        (268 lines)
 ```
 
 ### Target Module Structure (After All Phases)
@@ -213,12 +228,13 @@ After each phase:
 
 ## Benefits Achieved So Far
 
-1. ✅ **Reduced Complexity:** main.cpp is 46% smaller
-2. ✅ **Improved Organization:** Related code grouped in modules
-3. ✅ **Better Reusability:** TextWidget and FontManager are portable
-4. ✅ **Enhanced Readability:** Files are 200-700 lines instead of 1,654
-5. ✅ **Easier Collaboration:** Developers can work on different modules
+1. ✅ **Reduced Complexity:** main.cpp is 60% smaller (1,654 → 660 lines)
+2. ✅ **Improved Organization:** Related code grouped in 3 logical modules (widgets, graphics, events)
+3. ✅ **Better Reusability:** TextWidget, FontManager, and EventHandler are portable and self-contained
+4. ✅ **Enhanced Readability:** Files average 218 lines instead of a monolithic 1,654
+5. ✅ **Easier Collaboration:** Developers can work on different modules independently
 6. ✅ **Incremental Build:** Changes to one module don't recompile everything
+7. ✅ **Clean Dependencies:** EventHandler uses dependency injection for testability
 
 ---
 
@@ -233,5 +249,5 @@ After each phase:
 ---
 
 **Last Updated:** 2025-12-08
-**Status:** Phases 1 & 2 Complete (40% done)
-**Next Step:** Phase 3 - Extract EventHandler
+**Status:** Phases 1-3 Complete (60% reduction achieved), Phase 4 Skipped
+**Next Step:** Optional Phase 5 - Split Application class into header/implementation (if desired)
