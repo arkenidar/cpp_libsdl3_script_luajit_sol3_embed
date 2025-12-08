@@ -85,6 +85,7 @@ add_executable(${PROJECT_NAME}
     src/main.cpp
     src/widgets/TextWidget.cpp
     src/graphics/FontManager.cpp
+    src/events/EventHandler.cpp
 )
 
 # Include directories

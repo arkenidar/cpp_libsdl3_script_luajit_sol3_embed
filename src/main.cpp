@@ -11,6 +11,7 @@
 
 #include "widgets/TextWidget.hpp"
 #include "graphics/FontManager.hpp"
+#include "events/EventHandler.hpp"
 
 // Forward declaration
 class Application;
@@ -36,6 +37,9 @@ private:
     std::map<int, std::shared_ptr<TextWidget>> textWidgets;
     int nextWidgetId = 1;
 
+    // Event handling
+    std::unique_ptr<EventHandler> eventHandler;
+
 public:
     Application() {
         // Initialize Lua with standard libraries
@@ -43,6 +47,9 @@ public:
 
         // Expose SDL and application functions to Lua
         setupLuaBindings();
+
+        // Initialize event handler (after Lua and other members are ready)
+        eventHandler = std::make_unique<EventHandler>(lua, textWidgets, window, running, windowWidth, windowHeight);
     }
 
     ~Application() {
@@ -562,185 +569,7 @@ public:
     }
 
     void handleEvents() {
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
-            } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                windowWidth = event.window.data1;
-                windowHeight = event.window.data2;
-            } else if (event.type == SDL_EVENT_KEY_DOWN) {
-                // Route to widgets first
-                std::string keyName = SDL_GetKeyName(event.key.key);
-                SDL_Keymod mod = SDL_GetModState();
-                bool shift = (mod & SDL_KMOD_SHIFT) != 0;
-                bool ctrl = (mod & SDL_KMOD_CTRL) != 0;
-                bool consumed = false;
-                for (auto& [id, widget] : textWidgets) {
-                    if (widget->handleKeyDown(keyName, shift, ctrl)) {
-                        consumed = true;
-                        break;
-                    }
-                }
-                // Call Lua onKeyDown if not consumed by widget
-                if (!consumed) {
-                    sol::optional<sol::function> onKeyDown = lua["onKeyDown"];
-                    if (onKeyDown) {
-                        try {
-                            (*onKeyDown)(keyName);
-                        } catch (const sol::error& e) {
-                            std::cerr << "Lua onKeyDown error: " << e.what() << std::endl;
-                        }
-                    }
-                }
-            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                // Route to widgets first
-                // First, unfocus all widgets so only the clicked one will have focus
-                for (auto& [id, widget] : textWidgets) {
-                    if (widget->hasFocus() && !widget->hitTest(event.button.x, event.button.y)) {
-                        widget->setFocus(false);
-                    }
-                }
-                // Now handle the click
-                bool consumed = false;
-                for (auto& [id, widget] : textWidgets) {
-                    if (widget->handleMouseDown(event.button.x, event.button.y, event.button.button)) {
-                        consumed = true;
-                        break;
-                    }
-                }
-                // Call Lua onMouseDown if not consumed
-                if (!consumed) {
-                    sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
-                    if (onMouseDown) {
-                        try {
-                            (*onMouseDown)(event.button.x, event.button.y, event.button.button);
-                        } catch (const sol::error& e) {
-                            std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
-                        }
-                    }
-                }
-            } else if (event.type == SDL_EVENT_KEY_UP) {
-                // Call Lua onKeyUp if it exists
-                sol::optional<sol::function> onKeyUp = lua["onKeyUp"];
-                if (onKeyUp) {
-                    try {
-                        (*onKeyUp)(SDL_GetKeyName(event.key.key));
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onKeyUp error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_TEXT_INPUT) {
-                // Route to widgets first
-                bool consumed = false;
-                for (auto& [id, widget] : textWidgets) {
-                    if (widget->handleTextInput(event.text.text)) {
-                        consumed = true;
-                        break;
-                    }
-                }
-                // Call Lua onTextInput if not consumed
-                if (!consumed) {
-                    sol::optional<sol::function> onTextInput = lua["onTextInput"];
-                    if (onTextInput) {
-                        try {
-                            (*onTextInput)(event.text.text);
-                        } catch (const sol::error& e) {
-                            std::cerr << "Lua onTextInput error: " << e.what() << std::endl;
-                        }
-                    }
-                }
-            } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                // Route to widgets first
-                for (auto& [id, widget] : textWidgets) {
-                    widget->handleMouseUp(event.button.x, event.button.y, event.button.button);
-                }
-                // Always call Lua onMouseUp
-                sol::optional<sol::function> onMouseUp = lua["onMouseUp"];
-                if (onMouseUp) {
-                    try {
-                        (*onMouseUp)(event.button.x, event.button.y, event.button.button);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onMouseUp error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-                // Call Lua onMouseWheel if it exists
-                sol::optional<sol::function> onMouseWheel = lua["onMouseWheel"];
-                if (onMouseWheel) {
-                    try {
-                        float mouseX, mouseY;
-                        SDL_GetMouseState(&mouseX, &mouseY);
-                        (*onMouseWheel)(mouseX, mouseY, event.wheel.x, event.wheel.y);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onMouseWheel error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                // Route to widgets first (for drag selection)
-                for (auto& [id, widget] : textWidgets) {
-                    widget->handleMouseMove(event.motion.x, event.motion.y);
-                }
-                // Always call Lua onMouseMove
-                sol::optional<sol::function> onMouseMove = lua["onMouseMove"];
-                if (onMouseMove) {
-                    try {
-                        (*onMouseMove)(event.motion.x, event.motion.y);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onMouseMove error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_FINGER_DOWN) {
-                // Call Lua onTouchDown if it exists
-                sol::optional<sol::function> onTouchDown = lua["onTouchDown"];
-                if (onTouchDown) {
-                    try {
-                        float x = event.tfinger.x * windowWidth;
-                        float y = event.tfinger.y * windowHeight;
-                        (*onTouchDown)(event.tfinger.fingerID, x, y, event.tfinger.pressure);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onTouchDown error: " << e.what() << std::endl;
-                    }
-                }
-                // Also call onMouseDown for compatibility
-                sol::optional<sol::function> onMouseDown = lua["onMouseDown"];
-                if (onMouseDown) {
-                    try {
-                        float x = event.tfinger.x * windowWidth;
-                        float y = event.tfinger.y * windowHeight;
-                        (*onMouseDown)(x, y, 1); // Treat as left click
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onMouseDown error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_FINGER_UP) {
-                // Call Lua onTouchUp if it exists
-                sol::optional<sol::function> onTouchUp = lua["onTouchUp"];
-                if (onTouchUp) {
-                    try {
-                        float x = event.tfinger.x * windowWidth;
-                        float y = event.tfinger.y * windowHeight;
-                        (*onTouchUp)(event.tfinger.fingerID, x, y);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onTouchUp error: " << e.what() << std::endl;
-                    }
-                }
-            } else if (event.type == SDL_EVENT_FINGER_MOTION) {
-                // Call Lua onTouchMove if it exists
-                sol::optional<sol::function> onTouchMove = lua["onTouchMove"];
-                if (onTouchMove) {
-                    try {
-                        float x = event.tfinger.x * windowWidth;
-                        float y = event.tfinger.y * windowHeight;
-                        float dx = event.tfinger.dx * windowWidth;
-                        float dy = event.tfinger.dy * windowHeight;
-                        (*onTouchMove)(event.tfinger.fingerID, x, y, dx, dy);
-                    } catch (const sol::error& e) {
-                        std::cerr << "Lua onTouchMove error: " << e.what() << std::endl;
-                    }
-                }
-            }
-        }
+        eventHandler->handleEvents();
     }
 
     void update(float deltaTime) {
