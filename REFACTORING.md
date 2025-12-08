@@ -75,7 +75,7 @@ This document tracks the progress of refactoring the monolithic `src/main.cpp` (
 ---
 
 ### ✅ Phase 4: Lua Bindings Extraction
-**Commit:** bb36327
+**Commit:** 50fb047
 
 **Created Files:**
 - `src/lua/LuaBindings.hpp` (15 lines) - Lua bindings interface
